@@ -1,0 +1,1501 @@
+-- =============================================
+-- AIMBOT V4.0 - OBSIDIAN EDITION
+-- By AZ•Studios
+-- =============================================
+
+-- ===== OBSIDIAN LADEN =====
+local repo = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+-- Globale Zugriffstabellen
+local Options = Library.Options
+local Toggles = Library.Toggles
+
+-- ===== SERVICES =====
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+-- =============================================
+-- VARIABLEN
+-- =============================================
+
+local FOV = 120
+local TargetPart = "Head"
+local AimSpeed = 50
+local AimKey = Enum.KeyCode.E
+local NearLock = false
+local LockDistance = 0
+
+-- ESP
+local ESPEnabled = false
+local TracersEnabled = false
+local BoxESPEnabled = false
+local NameESPEnabled = false
+local HealthESPEnabled = false
+local TeamCheckEnabled = true
+local WallCheckEnabled = true
+local TriggerBotEnabled = false
+local TriggerBotDelay = 0.001
+local FOVVisible = true
+local ChamsEnabled = false
+local FOVCircleFilled = false
+local AimbotFOVColor = Color3.fromRGB(255, 255, 255)
+
+-- AIM (RAW System)
+local InstantAimlock = false
+local LegitAimlock = false
+local currentTarget = nil
+local excludedTargets = {}
+local lastTargetPos = nil
+local showLastPos = false
+local legitOffsets = {}
+
+-- ESP
+local ESPBoxes = {}
+local ESPNames = {}
+local ESPHealth = {}
+local ESPDistances = {}
+local ESPHealthBars = {}
+local ESPGlow = {}
+local Tracers = {}
+local Chams = {}
+local ESPColor = Color3.fromRGB(255, 0, 0)
+
+-- SKY
+local CurrentSkyType = "Default"
+
+-- MISC
+local speedEnabled = false
+local speedValue = 16
+local jumpEnabled = false
+local jumpValue = 50
+
+-- =============================================
+-- TEAM SYSTEM (NUR CIRCLE)
+-- =============================================
+
+_G.TeamList = _G.TeamList or {}
+_G.TeamCheckEnabled = _G.TeamCheckEnabled or false
+_G.ShowCircle = _G.ShowCircle ~= false
+_G.TeamRadius = _G.TeamRadius or 3
+_G.TeamColor = _G.TeamColor or Color3.fromRGB(0, 255, 0)
+
+local CircleRadius = 8
+local FootCircle = nil
+local TeamRings = {}
+local WhitelistDropdown = nil
+
+-- =============================================
+-- FENSTER ERSTELLEN
+-- =============================================
+
+local Window = Library:CreateWindow({
+    Title = "Aimbot",
+    Footer = "V4.0 | By AZ•Studios",
+    Center = true,
+    AutoShow = true,
+    Resizable = true,
+    NotifySide = "Right",
+    ShowCustomCursor = true,
+    CornerRadius = 10,
+    Icon = "rbxassetid://114073984598202",
+    Background = "rbxassetid://114073984598202",
+    AccentColor = Color3.fromRGB(255, 0, 0),
+    BackgroundColor = Color3.fromRGB(0, 0, 0),
+})
+
+-- =============================================
+-- TABS
+-- =============================================
+
+local Tabs = {
+    Aim = Window:AddTab("Aimlock", "crosshair"),
+    ESP = Window:AddTab("ESP", "eye"),
+    Team = Window:AddTab("Team", "users"),
+    Misc = Window:AddTab("Misc", "settings"),
+    UISettings = Window:AddTab("UI Settings", "settings"),
+}
+
+-- =============================================
+-- FOV CIRCLE (FARBE WECHSELT BEI LOCK)
+-- =============================================
+
+local Circle = Drawing.new("Circle")
+Circle.Visible = FOVVisible
+Circle.Color = AimbotFOVColor
+Circle.Thickness = 2
+Circle.NumSides = 100
+Circle.Filled = false
+Circle.Transparency = 1
+Circle.Radius = FOV
+
+local function UpdateFOVColor()
+    if currentTarget and IsTargetValid(currentTarget) then
+        Circle.Color = Color3.fromRGB(0, 255, 0)
+    else
+        Circle.Color = AimbotFOVColor
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    Circle.Position = Vector2.new(
+        Camera.ViewportSize.X / 2,
+        Camera.ViewportSize.Y / 2
+    )
+    Circle.Radius = FOV
+    Circle.Visible = FOVVisible
+    Circle.Filled = FOVCircleFilled
+    Circle.Transparency = FOVCircleFilled and 0.3 or 1
+    UpdateFOVColor()
+end)
+
+-- =============================================
+-- TEAM CIRCLE
+-- =============================================
+
+FootCircle = Instance.new("Part")
+FootCircle.Name = "FootCircle"
+FootCircle.Anchored = true
+FootCircle.CanCollide = false
+FootCircle.CanTouch = false
+FootCircle.CanQuery = false
+FootCircle.Material = Enum.Material.Neon
+FootCircle.Color = Color3.fromRGB(0, 170, 255)
+FootCircle.Transparency = _G.ShowCircle and 0.35 or 1
+FootCircle.Shape = Enum.PartType.Cylinder
+FootCircle.Size = Vector3.new(0.2, CircleRadius * 2, CircleRadius * 2)
+FootCircle.CFrame = CFrame.Angles(0, 0, math.rad(90))
+FootCircle.Parent = workspace
+
+-- =============================================
+-- TARGET CIRCLE
+-- =============================================
+
+local targetCircle = Instance.new("Part")
+targetCircle.Name = "TargetCircle"
+targetCircle.Shape = Enum.PartType.Cylinder
+targetCircle.Size = Vector3.new(0.2, 4, 4)
+targetCircle.Color = Color3.fromRGB(255, 0, 0)
+targetCircle.Material = Enum.Material.Neon
+targetCircle.Transparency = 0.4
+targetCircle.Anchored = true
+targetCircle.CanCollide = false
+targetCircle.CanTouch = false
+targetCircle.CanQuery = false
+targetCircle.Transparency = 1
+targetCircle.Parent = workspace
+
+-- =============================================
+-- TEAM RING FUNKTIONEN
+-- =============================================
+
+function UpdateAllRings()
+    for player, ring in pairs(TeamRings) do
+        if ring then ring:Destroy() end
+    end
+    TeamRings = {}
+    if not _G.TeamCheckEnabled then return end
+    if not _G.ShowCircle then return end
+    for _, player in ipairs(_G.TeamList) do
+        if typeof(player) == "Instance" and player:IsA("Player") and player ~= LocalPlayer then
+            local Character = workspace:FindFirstChild(player.Name)
+            if Character then
+                local RootPart = Character:FindFirstChild("HumanoidRootPart")
+                if RootPart then
+                    local Ring = Instance.new("Part")
+                    Ring.Name = "TeamRing_" .. player.Name
+                    Ring.Anchored = true
+                    Ring.CanCollide = false
+                    Ring.CanTouch = false
+                    Ring.CanQuery = false
+                    Ring.Material = Enum.Material.Neon
+                    Ring.Color = _G.TeamColor
+                    Ring.Transparency = 0.35
+                    Ring.Shape = Enum.PartType.Cylinder
+                    Ring.Size = Vector3.new(0.2, _G.TeamRadius * 2, _G.TeamRadius * 2)
+                    Ring.CFrame = CFrame.new(RootPart.Position.X, RootPart.Position.Y - 1.5, RootPart.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+                    Ring.Parent = workspace
+                    TeamRings[player] = Ring
+                end
+            end
+        end
+    end
+end
+
+local function UpdateFootCircle()
+    if not FootCircle then return end
+    FootCircle.Size = Vector3.new(0.2, CircleRadius * 2, CircleRadius * 2)
+end
+
+RunService.RenderStepped:Connect(function()
+    local Character = LocalPlayer.Character
+    if not Character then FootCircle.Transparency = 1 return end
+    local RootPart = Character:FindFirstChild("HumanoidRootPart")
+    if not RootPart then FootCircle.Transparency = 1 return end
+
+    FootCircle.Size = Vector3.new(0.2, CircleRadius * 2, CircleRadius * 2)
+    FootCircle.Transparency = _G.ShowCircle and 0.35 or 1
+    FootCircle.CFrame = CFrame.new(RootPart.Position.X, RootPart.Position.Y - 1.5, RootPart.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+
+    if not _G.TeamCheckEnabled or not _G.ShowCircle then return end
+    for player, ring in pairs(TeamRings) do
+        if ring and ring.Parent then
+            local Character2 = workspace:FindFirstChild(player.Name)
+            if Character2 then
+                local RootPart2 = Character2:FindFirstChild("HumanoidRootPart")
+                if RootPart2 then
+                    ring.CFrame = CFrame.new(RootPart2.Position.X, RootPart2.Position.Y - 1.5, RootPart2.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+                    ring.Size = Vector3.new(0.2, _G.TeamRadius * 2, _G.TeamRadius * 2)
+                    ring.Color = _G.TeamColor
+                    ring.Transparency = 0.35
+                else
+                    ring.Transparency = 1
+                end
+            else
+                ring.Transparency = 1
+            end
+        end
+    end
+end)
+
+function AddPlayersInCircleToTeam()
+    local MyCharacter = LocalPlayer.Character
+    if not MyCharacter then return end
+    local MyRootPart = MyCharacter:FindFirstChild("HumanoidRootPart")
+    if not MyRootPart then return end
+
+    local function IsInCircle(pos)
+        local distance = (pos - MyRootPart.Position).Magnitude
+        return distance <= CircleRadius
+    end
+
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer then
+            local Character = workspace:FindFirstChild(Player.Name)
+            if Character then
+                local OtherRootPart = Character:FindFirstChild("HumanoidRootPart")
+                if OtherRootPart then
+                    local pos = OtherRootPart.Position
+                    if IsInCircle(pos) then
+                        local AlreadyInTeam = false
+                        for _, TeamPlayer in ipairs(_G.TeamList) do
+                            if TeamPlayer == Player then AlreadyInTeam = true break end
+                        end
+                        if not AlreadyInTeam then
+                            table.insert(_G.TeamList, Player)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    UpdateAllRings()
+    RefreshWhitelistDropdown()
+    Library:Notify({
+        Title = "Team",
+        Description = "Players in the circle were added to the team.",
+        Time = 3
+    })
+end
+
+-- =============================================
+-- WHITELIST DROPDOWN FUNKTIONEN
+-- =============================================
+
+function GetWhitelistOptions()
+    local options = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local displayName = player.DisplayName or player.Name
+            local optionText = player.Name .. "/" .. displayName
+            table.insert(options, optionText)
+        end
+    end
+    return options
+end
+
+function RefreshWhitelistDropdown()
+    if WhitelistDropdown then
+        local newOptions = GetWhitelistOptions()
+        WhitelistDropdown:SetValues(newOptions)
+    end
+end
+
+-- =============================================
+-- HILFSFUNKTIONEN
+-- =============================================
+
+local function IsVisible(Target)
+    if not WallCheckEnabled then return true end
+    local Origin = Camera.CFrame.Position
+    local Direction = (Target.Position - Origin).Unit * 5000
+    local Params = RaycastParams.new()
+    Params.FilterType = Enum.RaycastFilterType.Blacklist
+    Params.FilterDescendantsInstances = { LocalPlayer.Character }
+    Params.IgnoreWater = true
+    local Result = workspace:Raycast(Origin, Direction, Params)
+    if Result then
+        return Result.Instance:IsDescendantOf(Target.Parent)
+    end
+    return true
+end
+
+local function IsEnemy(player)
+    if not TeamCheckEnabled then return true end
+    for _, teamPlayer in pairs(_G.TeamList) do
+        if teamPlayer == player then return false end
+    end
+    if LocalPlayer.Team and player.Team then
+        return LocalPlayer.Team ~= player.Team
+    end
+    return true
+end
+
+-- =============================================
+-- SKY PRESETS & FUNKTIONEN
+-- =============================================
+
+local SkyPresets = {
+    Default = {
+        SkyboxBk = "rbxassetid://6444884337",
+        SkyboxDn = "rbxassetid://6444884337",
+        SkyboxFt = "rbxassetid://6444884337",
+        SkyboxLf = "rbxassetid://6444884337",
+        SkyboxRt = "rbxassetid://6444884337",
+        SkyboxUp = "rbxassetid://6444884337",
+        MoonTextureId = "rbxassetid://6444320592",
+        SunTextureId = "rbxassetid://6196665106",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+    },
+    Aurora = {
+        SkyboxBk = "rbxassetid://128600713462148",
+        SkyboxDn = "rbxassetid://129205524771926",
+        SkyboxFt = "rbxassetid://91295549823939",
+        SkyboxLf = "rbxassetid://78049621027692",
+        SkyboxRt = "rbxassetid://97339481871314",
+        SkyboxUp = "rbxassetid://85412515491070",
+        MoonTextureId = "rbxassetid://6444320592",
+        SunTextureId = "rbxassetid://6196665106",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+    },
+    Moonlight = {
+        SkyboxBk = "rbxassetid://116261899350523",
+        SkyboxDn = "rbxassetid://92257816837512",
+        SkyboxFt = "rbxassetid://108326981730305",
+        SkyboxLf = "rbxassetid://131834280163741",
+        SkyboxRt = "rbxassetid://99525277797873",
+        SkyboxUp = "rbxassetid://125425274451894",
+        MoonTextureId = "rbxassetid://6444320592",
+        SunTextureId = "rbxassetid://6196665106",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+        CelestialBodiesShown = 3,
+    },
+    Orange = {
+        SkyboxBk = "rbxassetid://75806894209584",
+        SkyboxDn = "rbxassetid://88955070832523",
+        SkyboxFt = "rbxassetid://137588397191887",
+        SkyboxLf = "rbxassetid://124955584991258",
+        SkyboxRt = "rbxassetid://140343245463200",
+        SkyboxUp = "rbxassetid://134383800716949",
+        MoonTextureId = "rbxassetid://6444320592",
+        SunTextureId = "rbxassetid://6196665106",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+        CelestialBodiesShown = 3,
+    },
+    Pink = {
+        SkyboxBk = "rbxassetid://12635309703",
+        SkyboxDn = "rbxassetid://12635311686",
+        SkyboxFt = "rbxassetid://12635312870",
+        SkyboxLf = "rbxassetid://12635313718",
+        SkyboxRt = "rbxassetid://12635315817",
+        SkyboxUp = "rbxassetid://12635316856",
+        MoonTextureId = "rbxassetid://1345054856",
+        SunTextureId = "rbxasset://sky/sun.jpg",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+        CelestialBodiesShown = 3,
+    },
+    Universe = {
+        SkyboxBk = "rbxassetid://600830446",
+        SkyboxDn = "rbxassetid://600831635",
+        SkyboxFt = "rbxassetid://600832720",
+        SkyboxLf = "rbxassetid://600886090",
+        SkyboxRt = "rbxassetid://600833862",
+        SkyboxUp = "rbxassetid://600835177",
+        MoonTextureId = "rbxasset://sky/moon.jpg",
+        SunTextureId = "rbxasset://sky/sun.jpg",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+        CelestialBodiesShown = 3,
+    },
+    Aesthetic = {
+        SkyboxBk = "rbxassetid://15983968922",
+        SkyboxDn = "rbxassetid://15983966825",
+        SkyboxFt = "rbxassetid://15983965025",
+        SkyboxLf = "rbxassetid://15983967420",
+        SkyboxRt = "rbxassetid://15983966246",
+        SkyboxUp = "rbxassetid://15983964246",
+        MoonTextureId = "rbxasset://sky/moon.jpg",
+        SunTextureId = "rbxasset://sky/sun.jpg",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+        CelestialBodiesShown = 3,
+    },
+    Space = {
+        SkyboxBk = "http://www.roblox.com/asset/?id=166509999",
+        SkyboxDn = "http://www.roblox.com/asset/?id=166510057",
+        SkyboxFt = "http://www.roblox.com/asset/?id=166510116",
+        SkyboxLf = "http://www.roblox.com/asset/?id=166510092",
+        SkyboxRt = "http://www.roblox.com/asset/?id=166510131",
+        SkyboxUp = "http://www.roblox.com/asset/?id=166510114",
+        MoonTextureId = "rbxasset://sky/moon.jpg",
+        SunTextureId = "rbxasset://sky/sun.jpg",
+        MoonAngularSize = 11,
+        SunAngularSize = 11,
+        StarCount = 3000,
+        CelestialBodiesShown = 3,
+    },
+}
+
+local function SetSky(skyName)
+    local preset = SkyPresets[skyName]
+    if not preset then return end
+    for _, v in pairs(Lighting:GetChildren()) do
+        if v:IsA("Sky") then v:Destroy() end
+    end
+    local sky = Instance.new("Sky")
+    sky.Name = skyName .. "Sky"
+    for prop, value in pairs(preset) do
+        sky[prop] = value
+    end
+    sky.Parent = Lighting
+    CurrentSkyType = skyName
+end
+
+local function ResetSky()
+    SetSky("Default")
+end
+
+-- =============================================
+-- TARGET-VALIDIERUNG (zentral)
+-- =============================================
+
+local function IsTargetValid(player)
+    if not player then return false end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    local part = char:FindFirstChild(TargetPart)
+    if not part then return false end
+    if not IsVisible(part) then return false end
+    if not IsEnemy(player) then return false end
+
+    if LockDistance > 0 then
+        local distance = (part.Position - Camera.CFrame.Position).Magnitude
+        if distance > LockDistance then return false end
+    end
+
+    local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+    if not onScreen then return false end
+    local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).Magnitude
+    if dist > FOV then return false end
+    return true
+end
+
+local function GetTargets()
+    local Targets = {}
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and not table.find(excludedTargets, Player) then
+            if IsTargetValid(Player) then
+                local part = Player.Character[TargetPart]
+                local pos = Camera:WorldToViewportPoint(part.Position)
+                local dist = (Vector2.new(pos.X, pos.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).Magnitude
+                local playerDist = (part.Position - Camera.CFrame.Position).Magnitude
+                table.insert(Targets, { Part = part, Distance = dist, Player = Player, PlayerDist = playerDist })
+            end
+        end
+    end
+    if NearLock then
+        table.sort(Targets, function(a, b) return a.PlayerDist < b.PlayerDist end)
+    else
+        table.sort(Targets, function(a, b) return a.Distance < b.Distance end)
+    end
+    return Targets
+end
+
+-- =============================================
+-- TARGET SKIP (zentrale Funktion für Q & Circle)
+-- =============================================
+
+local function SkipCurrentTarget()
+    if InstantAimlock or LegitAimlock then
+        if currentTarget then
+            if not table.find(excludedTargets, currentTarget) then
+                table.insert(excludedTargets, currentTarget)
+            end
+            currentTarget = nil
+            showLastPos = false
+            if targetCircle then targetCircle.Transparency = 1 end
+            Library:Notify({
+                Title = "Target Skip",
+                Description = "Current target skipped.",
+                Time = 1
+            })
+        else
+            Library:Notify({
+                Title = "Target Skip",
+                Description = "No active target to skip.",
+                Time = 1
+            })
+        end
+    else
+        Library:Notify({
+            Title = "Target Skip",
+            Description = "Aimlock is not active.",
+            Time = 1
+        })
+    end
+end
+
+-- =============================================
+-- AIM (RAW System + Target-Halte-Logik)
+-- =============================================
+
+local function AimAtTargets(Targets)
+        if currentTarget then
+        if IsTargetValid(currentTarget) then
+            local part = currentTarget.Character[TargetPart]
+            local targetPos = part.Position
+
+            if LegitAimlock then
+                if not legitOffsets[currentTarget] then
+                    local offsetX = (math.random() * 3 - 1.5)
+                    local offsetY = (math.random() * 3 - 1.5)
+                    legitOffsets[currentTarget] = Vector3.new(offsetX, offsetY, 0)
+                end
+                local offset = legitOffsets[currentTarget]
+                local worldOffset = part.CFrame:VectorToWorldSpace(offset)
+                targetPos = targetPos + worldOffset
+            end
+
+            if targetCircle then
+                targetCircle.Transparency = 0.4
+                targetCircle.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, 0, math.rad(90))
+            end
+            local currentCF = Camera.CFrame
+            local targetCF = CFrame.new(currentCF.Position, targetPos)
+
+            if InstantAimlock then
+                Camera.CFrame = targetCF
+            elseif LegitAimlock then
+                if AimSpeed > 0 then
+                    local relative = currentCF:ToObjectSpace(targetCF)
+                    local angles = Vector3.new(
+                        math.atan2(-relative.LookVector.Y, relative.LookVector.Z),
+                        math.atan2(relative.LookVector.X, relative.LookVector.Z),
+                        0
+                    )
+                    local maxAngle = math.rad(AimSpeed * 0.1)
+                    local clampedAngles = Vector3.new(
+                        math.clamp(angles.X, -maxAngle, maxAngle),
+                        math.clamp(angles.Y, -maxAngle, maxAngle),
+                        0
+                    )
+                    Camera.CFrame = currentCF * CFrame.fromEulerAnglesXYZ(clampedAngles.X, clampedAngles.Y, 0)
+                else
+                    Camera.CFrame = targetCF
+                end
+            end
+            showLastPos = false
+            return
+        else
+            currentTarget = nil
+            legitOffsets[currentTarget] = nil
+            if targetCircle then targetCircle.Transparency = 1 end
+            for i = #excludedTargets, 1, -1 do
+                if not IsTargetValid(excludedTargets[i]) then
+                    table.remove(excludedTargets, i)
+                end
+            end
+        end
+    end
+
+    if #Targets > 0 then
+        local targetData = Targets[1]
+        if targetData and targetData.Player then
+            currentTarget = targetData.Player
+            if LegitAimlock then
+                legitOffsets[currentTarget] = nil
+            end
+            local targetPos = targetData.Part.Position
+            if targetCircle then
+                targetCircle.Transparency = 0.4
+                targetCircle.CFrame = CFrame.new(targetPos) * CFrame.Angles(0, 0, math.rad(90))
+            end
+            local currentCF = Camera.CFrame
+            local targetCF = CFrame.new(currentCF.Position, targetPos)
+            if InstantAimlock then
+                Camera.CFrame = targetCF
+            elseif LegitAimlock then
+                if AimSpeed > 0 then
+                    local relative = currentCF:ToObjectSpace(targetCF)
+                    local angles = Vector3.new(
+                        math.atan2(-relative.LookVector.Y, relative.LookVector.Z),
+                        math.atan2(relative.LookVector.X, relative.LookVector.Z),
+                        0
+                    )
+                    local maxAngle = math.rad(AimSpeed * 0.1)
+                    local clampedAngles = Vector3.new(
+                        math.clamp(angles.X, -maxAngle, maxAngle),
+                        math.clamp(angles.Y, -maxAngle, maxAngle),
+                        0
+                    )
+                    Camera.CFrame = currentCF * CFrame.fromEulerAnglesXYZ(clampedAngles.X, clampedAngles.Y, 0)
+                else
+                    Camera.CFrame = targetCF
+                end
+            end
+            showLastPos = false
+        end
+    else
+        if targetCircle then targetCircle.Transparency = 1 end
+        currentTarget = nil
+        showLastPos = false
+    end
+end
+
+-- =============================================
+-- EXCLUDED TARGETS BEREINIGEN
+-- =============================================
+
+local function CleanupExcludedTargets()
+    for i = #excludedTargets, 1, -1 do
+        local player = excludedTargets[i]
+        if not player or not IsTargetValid(player) then
+            table.remove(excludedTargets, i)
+        end
+    end
+end
+
+-- =============================================
+-- TRIGGERBOT
+-- =============================================
+
+local lastShot = 0
+
+local function TriggerBot()
+    if not TriggerBotEnabled then return end
+    local targets = GetTargets()
+    if #targets == 0 then return end
+    if tick() - lastShot < TriggerBotDelay then return end
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(0.001)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    lastShot = tick()
+end
+
+-- =============================================
+-- RENDER LOOP
+-- =============================================
+
+RunService.RenderStepped:Connect(function()
+    if InstantAimlock or LegitAimlock then
+        local Targets = GetTargets()
+        AimAtTargets(Targets)
+    else
+        if targetCircle then targetCircle.Transparency = 1 end
+        currentTarget = nil
+        showLastPos = false
+    end
+    TriggerBot()
+    CleanupExcludedTargets()
+end)
+
+-- =============================================
+-- SPEED & JUMP LOOP
+-- =============================================
+
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return end
+
+    if speedEnabled then
+        hum.WalkSpeed = speedValue
+    else
+        hum.WalkSpeed = 16
+    end
+    if jumpEnabled then
+        hum.JumpPower = jumpValue
+    else
+        hum.JumpPower = 50
+    end
+end)
+
+-- =============================================
+-- KEYBINDS (Q + Circle-Button für Controller)
+-- =============================================
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == AimKey then
+        InstantAimlock = not InstantAimlock
+        if InstantAimlock then LegitAimlock = false end
+        Library:Notify({
+            Title = "Aimlock",
+            Description = InstantAimlock and "Instant Aimlock Enabled" or "Instant Aimlock Disabled",
+            Time = 2
+        })
+    end
+
+    -- Q-Taste (PC)
+    if input.KeyCode == Enum.KeyCode.Q then
+        SkipCurrentTarget()
+    end
+
+    -- Circle-Button (Controller) - ButtonB
+    if input.KeyCode == Enum.KeyCode.ButtonB then
+        SkipCurrentTarget()
+    end
+
+    if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.K then
+        Window:Toggle()
+    end
+end)
+
+-- =============================================
+-- PLAYER JOIN / MOD WARNING
+-- =============================================
+
+Players.PlayerAdded:Connect(function(player)
+    if player.Name == "RMilan3" then
+        for i = 1, 5 do
+            Library:Notify({
+                Title = "⚠️ MOD JOINED",
+                Description = "RMilan3 has joined the server!",
+                Time = 5
+            })
+            if i < 5 then task.wait(1) end
+        end
+    end
+end)
+
+-- =============================================
+-- ESP CLEANUP
+-- =============================================
+
+local function CleanupESP()
+    for _, box in pairs(ESPBoxes) do box:Remove() end
+    for _, name in pairs(ESPNames) do name:Remove() end
+    for _, health in pairs(ESPHealth) do health:Remove() end
+    for _, dist in pairs(ESPDistances) do dist:Remove() end
+    for _, bar in pairs(ESPHealthBars) do bar:Remove() end
+    for _, glow in pairs(ESPGlow) do glow:Remove() end
+    for _, tracer in pairs(Tracers) do tracer:Remove() end
+    for _, cham in pairs(Chams) do cham:Destroy() end
+    ESPBoxes = {}
+    ESPNames = {}
+    ESPHealth = {}
+    ESPDistances = {}
+    ESPHealthBars = {}
+    ESPGlow = {}
+    Tracers = {}
+    Chams = {}
+end
+
+-- =============================================
+-- ESP UPDATE (futuristisches Design)
+-- =============================================
+
+local function UpdateESP()
+    if not ESPEnabled and not TracersEnabled and not ChamsEnabled then
+        for _, box in pairs(ESPBoxes) do box.Visible = false end
+        for _, name in pairs(ESPNames) do name.Visible = false end
+        for _, health in pairs(ESPHealth) do health.Visible = false end
+        for _, dist in pairs(ESPDistances) do dist.Visible = false end
+        for _, bar in pairs(ESPHealthBars) do bar.Visible = false end
+        for _, glow in pairs(ESPGlow) do glow.Visible = false end
+        for _, tracer in pairs(Tracers) do tracer.Visible = false end
+        for _, cham in pairs(Chams) do cham.Enabled = false end
+        return
+    end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer
+            and player.Character
+            and player.Character:FindFirstChild("HumanoidRootPart")
+            and player.Character:FindFirstChild("Humanoid")
+            and player.Character.Humanoid.Health > 0
+            and IsEnemy(player) then
+
+            local root = player.Character.HumanoidRootPart
+            local humanoid = player.Character.Humanoid
+            local pos, onScreen = Camera:WorldToViewportPoint(root.Position)
+
+            if onScreen then
+                local size = Vector2.new(2000 / pos.Z, 3000 / pos.Z)
+                local boxPos = Vector2.new(pos.X - size.X / 2, pos.Y - size.Y / 2)
+
+                -- Glow-Effekt
+                if ESPEnabled and BoxESPEnabled then
+                    local glow = ESPGlow[player]
+                    if not glow then
+                        glow = Drawing.new("Square")
+                        glow.Visible = false
+                        glow.Color = ESPColor
+                        glow.Thickness = 4
+                        glow.Filled = false
+                        glow.Transparency = 0.6
+                        ESPGlow[player] = glow
+                    end
+                    glow.Size = size + Vector2.new(8, 8)
+                    glow.Position = boxPos - Vector2.new(4, 4)
+                    glow.Color = ESPColor
+                    glow.Visible = true
+                end
+
+                -- Box (dünner Neon-Rahmen)
+                if ESPEnabled and BoxESPEnabled then
+                    local box = ESPBoxes[player]
+                    if not box then
+                        box = Drawing.new("Square")
+                        box.Visible = false
+                        box.Color = ESPColor
+                        box.Thickness = 1.5
+                        box.Filled = false
+                        box.Transparency = 1
+                        ESPBoxes[player] = box
+                    end
+                    box.Size = size
+                    box.Position = boxPos
+                    box.Color = ESPColor
+                    box.Visible = true
+                end
+
+                -- Healthbar
+                if ESPEnabled and HealthESPEnabled then
+                    local bar = ESPHealthBars[player]
+                    if not bar then
+                        bar = Drawing.new("Square")
+                        bar.Visible = false
+                        bar.Thickness = 0
+                        bar.Filled = true
+                        bar.Transparency = 0.85
+                        ESPHealthBars[player] = bar
+                    end
+                    local hp = humanoid.Health / humanoid.MaxHealth
+                    bar.Size = Vector2.new(size.X * hp, 3)
+                    bar.Position = Vector2.new(boxPos.X, boxPos.Y + size.Y + 2)
+                    bar.Color = Color3.new(1 - hp, hp, 0)
+                    bar.Visible = true
+                end
+
+                -- Name
+                if ESPEnabled and NameESPEnabled then
+                    local name = ESPNames[player]
+                    if not name then
+                        name = Drawing.new("Text")
+                        name.Visible = false
+                        name.Color = Color3.new(1, 1, 1)
+                        name.Size = 14
+                        name.Center = true
+                        name.Outline = true
+                        name.OutlineColor = Color3.new(0, 0, 0)
+                        name.Text = player.Name
+                        ESPNames[player] = name
+                    end
+                    name.Position = Vector2.new(pos.X, boxPos.Y - 16)
+                    name.Text = player.Name
+                    name.Visible = true
+                end
+
+                -- Distanz
+                if ESPEnabled then
+                    local dist = ESPDistances[player]
+                    if not dist then
+                        dist = Drawing.new("Text")
+                        dist.Visible = false
+                        dist.Color = Color3.new(1, 1, 1)
+                        dist.Size = 11
+                        dist.Center = true
+                        dist.Outline = true
+                        dist.OutlineColor = Color3.new(0, 0, 0)
+                        ESPDistances[player] = dist
+                    end
+                    local distance = math.floor((root.Position - Camera.CFrame.Position).Magnitude)
+                    dist.Text = distance .. "m"
+                    dist.Position = Vector2.new(pos.X, boxPos.Y + size.Y + 18)
+                    dist.Visible = true
+                end
+
+                -- Tracers
+                if TracersEnabled then
+                    local tracer = Tracers[player]
+                    if not tracer then
+                        tracer = Drawing.new("Line")
+                        tracer.Visible = false
+                        tracer.Color = ESPColor
+                        tracer.Thickness = 1.5
+                        Tracers[player] = tracer
+                    end
+                    tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                    tracer.To = Vector2.new(pos.X, pos.Y)
+                    tracer.Color = ESPColor
+                    tracer.Visible = true
+                end
+
+                -- Chams
+                if ChamsEnabled then
+                    local cham = Chams[player]
+                    if not cham then
+                        cham = Instance.new("Highlight")
+                        cham.Name = "ESPChams"
+                        cham.FillColor = ESPColor
+                        cham.FillTransparency = 0.4
+                        cham.OutlineColor = Color3.new(1, 1, 1)
+                        cham.OutlineTransparency = 0.2
+                        cham.Parent = player.Character
+                        Chams[player] = cham
+                    end
+                    cham.Enabled = true
+                    cham.FillColor = ESPColor
+                end
+            else
+                if ESPBoxes[player] then ESPBoxes[player].Visible = false end
+                if ESPNames[player] then ESPNames[player].Visible = false end
+                if ESPHealth[player] then ESPHealth[player].Visible = false end
+                if ESPDistances[player] then ESPDistances[player].Visible = false end
+                if ESPHealthBars[player] then ESPHealthBars[player].Visible = false end
+                if ESPGlow[player] then ESPGlow[player].Visible = false end
+                if Tracers[player] then Tracers[player].Visible = false end
+                if Chams[player] then Chams[player].Enabled = false end
+            end
+        else
+            if ESPBoxes[player] then ESPBoxes[player].Visible = false end
+            if ESPNames[player] then ESPNames[player].Visible = false end
+            if ESPHealth[player] then ESPHealth[player].Visible = false end
+            if ESPDistances[player] then ESPDistances[player].Visible = false end
+            if ESPHealthBars[player] then ESPHealthBars[player].Visible = false end
+            if ESPGlow[player] then ESPGlow[player].Visible = false end
+            if Tracers[player] then Tracers[player].Visible = false end
+            if Chams[player] then
+                Chams[player]:Destroy()
+                Chams[player] = nil
+            end
+        end
+    end
+end
+
+RunService.RenderStepped:Connect(UpdateESP)
+
+-- =============================================
+-- PLAYER REMOVING
+-- =============================================
+
+Players.PlayerRemoving:Connect(function(player)
+    if ESPBoxes[player] then ESPBoxes[player]:Remove() end
+    if ESPNames[player] then ESPNames[player]:Remove() end
+    if ESPHealth[player] then ESPHealth[player]:Remove() end
+    if ESPDistances[player] then ESPDistances[player]:Remove() end
+    if ESPHealthBars[player] then ESPHealthBars[player]:Remove() end
+    if ESPGlow[player] then ESPGlow[player]:Remove() end
+    if Tracers[player] then Tracers[player]:Remove() end
+    if Chams[player] then Chams[player]:Destroy() end
+    ESPBoxes[player] = nil
+    ESPNames[player] = nil
+    ESPHealth[player] = nil
+    ESPDistances[player] = nil
+    ESPHealthBars[player] = nil
+    ESPGlow[player] = nil
+    Tracers[player] = nil
+    Chams[player] = nil
+    for i = #_G.TeamList, 1, -1 do
+        if _G.TeamList[i] == player then
+            table.remove(_G.TeamList, i)
+        end
+    end
+    UpdateAllRings()
+    for i = #excludedTargets, 1, -1 do
+        if excludedTargets[i] == player then
+            table.remove(excludedTargets, i)
+        end
+    end
+    RefreshWhitelistDropdown()
+    legitOffsets[player] = nil
+end)
+
+-- =============================================
+-- UI AUFBAU
+-- =============================================
+
+-- ===== AIM TAB =====
+local AimLeft = Tabs.Aim:AddLeftGroupbox("Aimlock Settings")
+local AimRight = Tabs.Aim:AddRightGroupbox("Advanced Settings")
+
+AimLeft:AddToggle("InstantAimlock", {
+    Text = "Instant Aimlock",
+    Default = false,
+    Callback = function(v)
+        InstantAimlock = v
+        if v then LegitAimlock = false end
+    end
+})
+
+AimLeft:AddToggle("LegitAimlock", {
+    Text = "Legit Aimlock",
+    Default = false,
+    Callback = function(v)
+        LegitAimlock = v
+        if v then InstantAimlock = false end
+    end
+})
+
+AimLeft:AddToggle("NearLock", {
+    Text = "Near Lock",
+    Default = false,
+    Callback = function(v) NearLock = v end
+})
+
+AimLeft:AddSlider("LockDistance", {
+    Text = "Lock Distance",
+    Default = 0,
+    Min = 0,
+    Max = 5000,
+    Rounding = 0,
+    Callback = function(v) LockDistance = v end
+})
+
+AimLeft:AddSlider("FOVSize", {
+    Text = "FOV Size",
+    Default = 120,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+    Callback = function(v) FOV = v end
+})
+
+AimLeft:AddSlider("AimSpeed", {
+    Text = "Aim Speed (0 = instant)",
+    Default = 50,
+    Min = 0,
+    Max = 200,
+    Rounding = 0,
+    Callback = function(v) AimSpeed = v end
+})
+
+AimLeft:AddDropdown("TargetPart", {
+    Text = "Target Part",
+    Values = { "Head", "HumanoidRootPart" },
+    Default = 1,
+    Callback = function(v) TargetPart = v end
+})
+
+AimLeft:AddLabel("Aimlock Key"):AddKeyPicker("AimKeyPicker", {
+    Default = "E",
+    Text = "Aimlock Key",
+    Callback = function(Key) AimKey = Key end
+})
+
+AimLeft:AddDivider()
+
+AimLeft:AddToggle("FOVVisible", {
+    Text = "Show FOV Circle",
+    Default = true,
+    Callback = function(v) FOVVisible = v end
+})
+
+AimLeft:AddToggle("FOVFilled", {
+    Text = "Filled FOV",
+    Default = false,
+    Callback = function(v) FOVCircleFilled = v end
+})
+
+AimLeft:AddLabel("FOV Circle Color"):AddColorPicker("FOVColorPicker", {
+    Default = Color3.fromRGB(255, 255, 255),
+    Callback = function(v) AimbotFOVColor = v end
+})
+
+AimRight:AddToggle("TeamCheck", {
+    Text = "Team Check",
+    Default = true,
+    Callback = function(v) TeamCheckEnabled = v end
+})
+
+AimRight:AddToggle("WallCheck", {
+    Text = "Wall Check",
+    Default = true,
+    Callback = function(v) WallCheckEnabled = v end
+})
+
+AimRight:AddToggle("TriggerBot", {
+    Text = "Trigger Bot",
+    Default = false,
+    Callback = function(v) TriggerBotEnabled = v end
+})
+
+AimRight:AddSlider("TriggerDelay", {
+    Text = "Trigger Delay",
+    Default = 0.001,
+    Min = 0.001,
+    Max = 0.5,
+    Rounding = 3,
+    Callback = function(v) TriggerBotDelay = v end
+})
+
+-- ===== ESP TAB =====
+local ESPLeft = Tabs.ESP:AddLeftGroupbox("ESP Settings")
+local ESPRight = Tabs.ESP:AddRightGroupbox("ESP Options")
+
+ESPLeft:AddToggle("ESPEnable", {
+    Text = "Enable ESP",
+    Default = false,
+    Callback = function(v)
+        ESPEnabled = v
+        if not v then CleanupESP() end
+    end
+})
+
+ESPLeft:AddToggle("ESPBox", {
+    Text = "Box ESP",
+    Default = false,
+    Callback = function(v) BoxESPEnabled = v end
+})
+
+ESPLeft:AddToggle("ESPName", {
+    Text = "Name ESP",
+    Default = false,
+    Callback = function(v) NameESPEnabled = v end
+})
+
+ESPLeft:AddToggle("ESPHealth", {
+    Text = "Health ESP",
+    Default = false,
+    Callback = function(v) HealthESPEnabled = v end
+})
+
+ESPLeft:AddToggle("ESPTracers", {
+    Text = "Tracers",
+    Default = false,
+    Callback = function(v) TracersEnabled = v end
+})
+
+ESPLeft:AddToggle("ESPChams", {
+    Text = "Chams",
+    Default = false,
+    Callback = function(v)
+        ChamsEnabled = v
+        if not v then
+            for _, cham in pairs(Chams) do cham:Destroy() end
+            Chams = {}
+        end
+    end
+})
+
+ESPRight:AddLabel("ESP Color"):AddColorPicker("ESPColorPicker", {
+    Default = Color3.fromRGB(255, 0, 0),
+    Callback = function(v) ESPColor = v end
+})
+
+-- ===== TEAM TAB (NUR CIRCLE) =====
+local TeamLeft = Tabs.Team:AddLeftGroupbox("Team Settings")
+local TeamRight = Tabs.Team:AddRightGroupbox("Team Management")
+
+TeamLeft:AddToggle("TeamCircle", {
+    Text = "Show Circle",
+    Default = true,
+    Callback = function(v)
+        _G.ShowCircle = v
+        if FootCircle then
+            FootCircle.Transparency = v and 0.35 or 1
+        end
+    end
+})
+
+TeamLeft:AddSlider("CircleRadius", {
+    Text = "Circle Radius",
+    Default = 8,
+    Min = 2,
+    Max = 30,
+    Rounding = 0,
+    Callback = function(v)
+        CircleRadius = v
+        UpdateFootCircle()
+        UpdateAllRings()
+    end
+})
+
+TeamLeft:AddButton({
+    Text = "Add to Team (Circle)",
+    Func = function()
+        AddPlayersInCircleToTeam()
+    end
+})
+
+TeamLeft:AddDivider()
+
+TeamLeft:AddToggle("TeamCheckEnabled", {
+    Text = "Team Check",
+    Default = false,
+    Callback = function(v)
+        _G.TeamCheckEnabled = v
+        if not v then _G.TeamList = {} end
+        UpdateAllRings()
+    end
+})
+
+TeamLeft:AddToggle("ShowTeamRings", {
+    Text = "Show Team Rings",
+    Default = true,
+    Callback = function(v)
+        UpdateAllRings()
+    end
+})
+
+TeamLeft:AddSlider("TeamRingRadius", {
+    Text = "Team Ring Radius",
+    Default = 3,
+    Min = 1,
+    Max = 8,
+    Rounding = 0,
+    Callback = function(v)
+        _G.TeamRadius = v
+        UpdateAllRings()
+    end
+})
+
+-- Whitelist Dropdown
+TeamLeft:AddDivider()
+TeamLeft:AddLabel("Whitelist (multi-select)")
+
+local whitelistOptions = GetWhitelistOptions()
+WhitelistDropdown = TeamLeft:AddDropdown("WhitelistDropdown", {
+    Text = "Select Players",
+    Values = whitelistOptions,
+    Default = {},
+    Multi = true,
+    Searchable = true,
+    Callback = function(Value)
+        local newSelection = {}
+        for key, _ in pairs(Value) do
+            newSelection[key] = true
+        end
+
+        for i = #_G.TeamList, 1, -1 do
+            local player = _G.TeamList[i]
+            if player ~= LocalPlayer then
+                local key = player.Name .. "/" .. (player.DisplayName or player.Name)
+                if not newSelection[key] then
+                    table.remove(_G.TeamList, i)
+                end
+            end
+        end
+
+        for key, _ in pairs(newSelection) do
+            local username = key:match("^(.-)/")
+            if username then
+                local player = Players:FindFirstChild(username)
+                if player and player ~= LocalPlayer then
+                    local already = false
+                    for _, tp in ipairs(_G.TeamList) do
+                        if tp == player then already = true break end
+                    end
+                    if not already then
+                        table.insert(_G.TeamList, player)
+                    end
+                end
+            end
+        end
+
+        UpdateAllRings()
+    end
+})
+
+TeamLeft:AddButton({
+    Text = "Refresh Whitelist",
+    Func = function()
+        RefreshWhitelistDropdown()
+        local selection = {}
+        for _, player in ipairs(_G.TeamList) do
+            if player ~= LocalPlayer then
+                local key = player.Name .. "/" .. (player.DisplayName or player.Name)
+                selection[key] = true
+            end
+        end
+        if WhitelistDropdown then
+            WhitelistDropdown:SetValue(selection)
+        end
+        Library:Notify({
+            Title = "Whitelist",
+            Description = "List updated.",
+            Time = 2
+        })
+    end
+})
+
+TeamRight:AddLabel("Team Ring Color"):AddColorPicker("TeamRingColorPicker", {
+    Default = Color3.fromRGB(0, 255, 0),
+    Callback = function(v)
+        _G.TeamColor = v
+        UpdateAllRings()
+    end
+})
+
+TeamRight:AddButton({
+    Text = "Reset Team",
+    Func = function()
+        _G.TeamList = {}
+        UpdateAllRings()
+        if WhitelistDropdown then
+            WhitelistDropdown:SetValue({})
+        end
+        Library:Notify({
+            Title = "Team",
+            Description = "Team has been reset.",
+            Time = 3
+        })
+    end
+})
+
+TeamRight:AddButton({
+    Text = "Show Team",
+    Func = function()
+        if #_G.TeamList == 0 then
+            Library:Notify({
+                Title = "Team",
+                Description = "No team members.",
+                Time = 3
+            })
+            return
+        end
+        local TeamText = "Team:\n"
+        for _, Player in ipairs(_G.TeamList) do
+            if typeof(Player) == "Instance" and Player:IsA("Player") then
+                TeamText = TeamText .. Player.Name .. "\n"
+            end
+        end
+        Library:Notify({
+            Title = "Team",
+            Description = TeamText,
+            Time = 5
+        })
+    end
+})
+
+-- ===== MISC TAB =====
+local MiscLeft = Tabs.Misc:AddLeftGroupbox("Misc Settings")
+local MiscRight = Tabs.Misc:AddRightGroupbox("More Options")
+
+MiscLeft:AddToggle("SpeedToggle", {
+    Text = "Speed",
+    Default = false,
+    Callback = function(v) speedEnabled = v end
+})
+
+MiscLeft:AddSlider("SpeedValue", {
+    Text = "Speed Value",
+    Default = 16,
+    Min = 0,
+    Max = 300,
+    Rounding = 0,
+    Callback = function(v) speedValue = v end
+})
+
+MiscLeft:AddToggle("JumpToggle", {
+    Text = "Jump Power",
+    Default = false,
+    Callback = function(v) jumpEnabled = v end
+})
+
+MiscLeft:AddSlider("JumpValue", {
+    Text = "Jump Power Value",
+    Default = 50,
+    Min = 0,
+    Max = 250,
+    Rounding = 0,
+    Callback = function(v) jumpValue = v end
+})
+
+MiscRight:AddDropdown("SkyPreset", {
+    Text = "Sky Presets",
+    Values = { "Default", "Moonlight", "Orange", "Aurora", "Space", "Universe", "Aesthetic", "Pink" },
+    Default = 1,
+    Callback = function(v) SetSky(v) end
+})
+
+MiscRight:AddButton({
+    Text = "Reset Sky",
+    Func = function()
+        ResetSky()
+        Library:Notify({
+            Title = "Sky",
+            Description = "Sky has been reset!",
+            Time = 2
+        })
+    end
+})
+
+MiscRight:AddButton({
+    Text = "Rejoin / Server Hop",
+    Func = function()
+        game:GetService("TeleportService"):Teleport(game.PlaceId)
+    end
+})
+
+-- ===== UI SETTINGS TAB =====
+local UISettingsLeft = Tabs.UISettings:AddLeftGroupbox("UI Theme")
+local UISettingsRight = Tabs.UISettings:AddRightGroupbox("Configs")
+
+ThemeManager:SetLibrary(Library)
+ThemeManager:SetFolder("Aimbot")
+ThemeManager:ApplyToTab(Tabs.UISettings)
+
+SaveManager:SetLibrary(Library)
+SaveManager:SetFolder("Aimbot/Configs")
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+SaveManager:BuildConfigSection(Tabs.UISettings)
+
+SaveManager:LoadAutoloadConfig()
+
+-- =============================================
+-- CLEANUP TEAM RINGS
+-- =============================================
+
+Players.PlayerRemoving:Connect(function(player)
+    if TeamRings[player] then
+        TeamRings[player]:Destroy()
+        TeamRings[player] = nil
+    end
+end)
+
+-- =============================================
+-- STARTMELDUNG
+-- =============================================
+
+print("=============================================")
+print("AIMBOT V4.0 - OBSIDIAN EDITION")
+print("By AZ•Studios")
+print("=============================================")
+print("Aimlock (Instant + Legit) | ESP | Team | Misc | UI Settings")
+print("Team Circle Only (Square removed)")
+print("Keys: E = Aimlock Toggle | Q = Target Skip | Circle (B) = Target Skip | Insert / K = UI Toggle")
+print("=============================================")
